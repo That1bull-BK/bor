@@ -170,7 +170,7 @@ type TxPoolConfig struct {
 	Journal string `hcl:"journal,optional" toml:"journal,optional"`
 
 	// Rejournal is the time interval to regenerate the local transaction journal
-	Rejournal    time.Duration `hcl:"-,optional" toml:"-,optional"`
+	Rejournal    time.Duration `hcl:"-,optional" toml:"-"`
 	RejournalRaw string        `hcl:"rejournal,optional" toml:"rejournal,optional"`
 
 	// PriceLimit is the minimum gas price to enforce for acceptance into the pool
@@ -192,7 +192,7 @@ type TxPoolConfig struct {
 	GlobalQueue uint64 `hcl:"globalqueue,optional" toml:"globalqueue,optional"`
 
 	// lifetime is the maximum amount of time non-executable transaction are queued
-	LifeTime    time.Duration `hcl:"-,optional" toml:"-,optional"`
+	LifeTime    time.Duration `hcl:"-,optional" toml:"-"`
 	LifeTimeRaw string        `hcl:"lifetime,optional" toml:"lifetime,optional"`
 }
 
@@ -210,7 +210,7 @@ type SealerConfig struct {
 	GasCeil uint64 `hcl:"gaslimit,optional" toml:"gaslimit,optional"`
 
 	// GasPrice is the minimum gas price for mining a transaction
-	GasPrice    *big.Int `hcl:"-,optional" toml:"-,optional"`
+	GasPrice    *big.Int `hcl:"-,optional" toml:"-"`
 	GasPriceRaw string   `hcl:"gasprice,optional" toml:"gasprice,optional"`
 }
 
@@ -273,11 +273,11 @@ type GpoConfig struct {
 	Percentile uint64 `hcl:"percentile,optional" toml:"percentile,optional"`
 
 	// MaxPrice is an upper bound gas price
-	MaxPrice    *big.Int `hcl:"-,optional" toml:"-,optional"`
+	MaxPrice    *big.Int `hcl:"-,optional" toml:"-"`
 	MaxPriceRaw string   `hcl:"maxprice,optional" toml:"maxprice,optional"`
 
 	// IgnorePrice is a lower bound gas price
-	IgnorePrice    *big.Int `hcl:"-,optional" toml:"-,optional"`
+	IgnorePrice    *big.Int `hcl:"-,optional" toml:"-"`
 	IgnorePriceRaw string   `hcl:"ignoreprice,optional" toml:"ignoreprice,optional"`
 }
 
@@ -350,7 +350,7 @@ type CacheConfig struct {
 	Journal string `hcl:"journal,optional" toml:"journal,optional"`
 
 	// Rejournal is the time interval to regenerate the journal for clean cache
-	Rejournal    time.Duration `hcl:"-,optional" toml:"-,optional"`
+	Rejournal    time.Duration `hcl:"-,optional" toml:"-"`
 	RejournalRaw string        `hcl:"rejournal,optional" toml:"rejournal,optional"`
 
 	// NoPrefetch is used to disable prefetch of tries
@@ -394,7 +394,7 @@ func DefaultConfig() *Config {
 		Identity:       Hostname(),
 		RequiredBlocks: map[string]string{},
 		LogLevel:       "INFO",
-		DataDir:        defaultDataDir(),
+		DataDir:        DefaultDataDir(),
 		P2P: &P2PConfig{
 			MaxPeers:     30,
 			MaxPendPeers: 50,
@@ -423,9 +423,9 @@ func DefaultConfig() *Config {
 		TxPool: &TxPoolConfig{
 			Locals:       []string{},
 			NoLocals:     false,
-			Journal:      "",
+			Journal:      "transactions.rlp",
 			Rejournal:    1 * time.Hour,
-			PriceLimit:   30000000000,
+			PriceLimit:   1,
 			PriceBump:    10,
 			AccountSlots: 16,
 			GlobalSlots:  32768,
@@ -436,8 +436,8 @@ func DefaultConfig() *Config {
 		Sealer: &SealerConfig{
 			Enabled:   false,
 			Etherbase: "",
-			GasCeil:   20000000,
-			GasPrice:  big.NewInt(30 * params.GWei),
+			GasCeil:   30_000_000,
+			GasPrice:  big.NewInt(1 * params.GWei),
 			ExtraData: "",
 		},
 		Gpo: &GpoConfig{
@@ -457,22 +457,22 @@ func DefaultConfig() *Config {
 				Prefix:  "",
 				Host:    "localhost",
 				API:     []string{"eth", "net", "web3", "txpool", "bor"},
-				Cors:    []string{"*"},
-				VHost:   []string{"*"},
+				Cors:    []string{"localhost"},
+				VHost:   []string{"localhost"},
 			},
 			Ws: &APIConfig{
 				Enabled: false,
 				Port:    8546,
 				Prefix:  "",
 				Host:    "localhost",
-				API:     []string{"web3", "net"},
-				Cors:    []string{"*"},
-				VHost:   []string{"*"},
+				API:     []string{"net", "web3"},
+				Cors:    []string{"localhost"},
+				VHost:   []string{"localhost"},
 			},
 			Graphql: &APIConfig{
 				Enabled: false,
-				Cors:    []string{"*"},
-				VHost:   []string{"*"},
+				Cors:    []string{"localhost"},
+				VHost:   []string{"localhost"},
 			},
 		},
 		Ethstats: "",
@@ -511,7 +511,7 @@ func DefaultConfig() *Config {
 			PasswordFile:        "",
 			AllowInsecureUnlock: false,
 			UseLightweightKDF:   false,
-			DisableBorWallet:    false,
+			DisableBorWallet:    true,
 		},
 		GRPC: &GRPCConfig{
 			Addr: ":3131",
@@ -848,7 +848,10 @@ func (c *Config) buildEth(stack *node.Node, accountManager *accounts.Manager) (*
 	case "full":
 		n.SyncMode = downloader.FullSync
 	case "snap":
-		n.SyncMode = downloader.SnapSync
+		// n.SyncMode = downloader.SnapSync // TODO(snap): Uncomment when we have snap sync working
+		n.SyncMode = downloader.FullSync
+
+		log.Warn("Bor doesn't support Snap Sync yet, switching to Full Sync mode")
 	default:
 		return nil, fmt.Errorf("sync mode '%s' not found", c.SyncMode)
 	}
@@ -1040,7 +1043,7 @@ func parseBootnodes(urls []string) ([]*enode.Node, error) {
 	return dst, nil
 }
 
-func defaultDataDir() string {
+func DefaultDataDir() string {
 	// Try to place the data folder in the user's home dir
 	home, _ := homedir.Dir()
 	if home == "" {
